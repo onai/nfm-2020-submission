@@ -139,7 +139,7 @@ mutual
         fnName <- parseName
         args <- many parseExpr
         token ")"
-        pure (MkInvocation fnName (MkListSExpr args))
+        pure (MkInvocation fnName (MkFormList args))
 
 
     parseExpr : Parser SExpr
@@ -191,7 +191,7 @@ mutual
         token "(run"
         fnName <- parseName
         token ")"
-        pure (MkRun (MkInvocation fnName (MkListSExpr [])))
+        pure (MkRun (MkInvocation fnName (MkFormList [])))
 
     parseBinding : Parser (String, SExpr)
     parseBinding = do

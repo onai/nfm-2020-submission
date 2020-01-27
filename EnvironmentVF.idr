@@ -4,7 +4,7 @@ import Data.List
 import Examples.SExpr
 
 %access export
-%default partial
+%default total
 %access public export
 
 
@@ -48,7 +48,6 @@ isRun (MkSTREQ left right) = No (\IsRun impossible)
 isRun (MkConcat left right) = No (\IsRun impossible)
 isRun (MkAppend item coll) = No (\IsRun impossible)
 isRun (MkInvocation fnName args) = No (\IsRun impossible)
-isRun (MkListSExpr exprs) = No (\IsRun impossible)
 isRun (MkRun fnName) = Yes IsRun
 
 data CollectedRun : (sexprs : SExprList) -> (runExpr : SExpr) -> Type where
@@ -77,7 +76,7 @@ data InvokationOfDefinition : (invocSExpr:SExpr) -> (defSExpr:SExpr) -> Type whe
                                (argVals : List SExpr) ->
                                (defArgs : List String) ->
                                (defBody : SExpr) ->
-                               InvokationOfDefinition (MkInvocation fnName (MkListSExpr argVals)) (MkDef fnName defArgs defBody)
+                               InvokationOfDefinition (MkInvocation fnName (MkFormList argVals)) (MkDef fnName defArgs defBody)
 
 
 
@@ -93,7 +92,6 @@ isInvokationOfDefinition (MkSTREQ left right) defSExpr              = No (\(IsIn
 isInvokationOfDefinition (MkConcat left right) defSExpr             = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
 isInvokationOfDefinition (MkAppend item coll) defSExpr              = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
 isInvokationOfDefinition (MkRun invocation) defSExpr                = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
-isInvokationOfDefinition (MkListSExpr args) defSExpr                = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
 isInvokationOfDefinition (MkInvocation fnName args) (MkDigit x)                       = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
 isInvokationOfDefinition (MkInvocation fnName args) (MkString x)                      = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
 isInvokationOfDefinition (MkInvocation fnName args) (MkLet x y z)                     = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
@@ -105,15 +103,16 @@ isInvokationOfDefinition (MkInvocation fnName args) (MkConcat left right)       
 isInvokationOfDefinition (MkInvocation fnName args) (MkAppend item coll)              = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
 isInvokationOfDefinition (MkInvocation fnName args) (MkInvocation x xs)               = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
 isInvokationOfDefinition (MkInvocation fnName args) (MkRun invocation)                = No (\(IsInvokationOfDefinition _ _ _ _) impossible)
-isInvokationOfDefinition (MkInvocation fnName (MkListSExpr args)) (MkDef x xs y) with (decEq fnName x)
+isInvokationOfDefinition (MkInvocation fnName (MkFormList args)) (MkDef x xs y) with (decEq fnName x)
     | (Yes prf) = rewrite prf in (Yes (IsInvokationOfDefinition x args xs y))
     | (No contra) = No (\(IsInvokationOfDefinition fnName args xs y) => contra Refl)
 
-getInvocPartOfInvokationOfDefinition : (invocDef:InvokationOfDefinition i d) -> (x : String ** xs:SExpr ** (i = MkInvocation x xs))
-getInvocPartOfInvokationOfDefinition (IsInvokationOfDefinition fnName argVals defArgs defBody) = (fnName ** (MkListSExpr argVals) ** Refl)
+getInvocPartOfInvokationOfDefinition : (invocDef:InvokationOfDefinition i d) -> (x : String ** xs:FormList ** (i = MkInvocation x xs))
+getInvocPartOfInvokationOfDefinition (IsInvokationOfDefinition fnName argVals defArgs defBody) = (fnName ** (MkFormList argVals) ** Refl)
 
 getDefPartOfInvokationOfDefinition : (invocDef:InvokationOfDefinition i d) -> (x : String ** xs:(List String) ** y:SExpr ** (d = MkDef x xs y))
 getDefPartOfInvokationOfDefinition (IsInvokationOfDefinition fnName argVals defArgs defBody) = (fnName ** defArgs ** defBody ** Refl)
+
 
 
 data ExtractDefinitionFromInvocation : (InvokationOfDefinition invocation definition) -> (sexprs : SExprList) -> Type where
@@ -126,28 +125,29 @@ data ExtractDefinitionFromInvocation : (InvokationOfDefinition invocation defini
                      (defArgs : List String) ->
                      (defBody : SExpr) ->
                      (argVals : List SExpr) ->
+                     (notHere : Not (currentSExpr = (MkDef defName defArgs defBody))) ->
                      (previous: ExtractDefinitionFromInvocation (IsInvokationOfDefinition defName argVals defArgs defBody) (MkSExprList previousSExprLst)) ->
                      ExtractDefinitionFromInvocation (IsInvokationOfDefinition defName argVals defArgs defBody) (MkSExprList (currentSExpr :: previousSExprLst))
 
 
 
-emptySExprListImpossible : (invPrf : Invocation (MkInvocation fnName (MkListSExpr args))) -> (defBody : SExpr ** defArgs : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) (MkSExprList [])) -> Void
+emptySExprListImpossible : (invPrf : Invocation (MkInvocation fnName (MkFormList args))) -> (defBody : SExpr ** defArgs : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) (MkSExprList [])) -> Void
 emptySExprListImpossible invPrf (defBody ** defArgs ** pf) with (pf)
     | (DefinitionHere _ _ _ _) impossible
-    | (DefinitionLater _ _ _ _ _) impossible
+    | (DefinitionLater _ _ _ _ _ _) impossible
 
 
 
 notHereNotLater : (notFoundLater : (defBody : SExpr ** defArgs : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) (MkSExprList sexprs)) -> Void) -> (notFoundHere : (fnName' = fnName) -> Void) -> (defBody1 : SExpr ** defArgs1 : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs1 defBody1) (MkSExprList ((MkDef fnName' defArgs defBody) :: sexprs))) -> Void
 notHereNotLater notFoundLater notFoundHere (n ** axs ** pf) with (pf)
     | (DefinitionHere _ _ _ _) = notFoundHere Refl
-    | (DefinitionLater fnName axs n args previous) = notFoundLater (n ** axs ** previous)
+    | (DefinitionLater fnName axs n args notHere previous) = notFoundLater (n ** axs ** previous)
 
 
-alsoNotFoundLater : (notFoundHere : InvokationOfDefinition (MkInvocation fnName (MkListSExpr args)) sexprHead -> Void) -> (notFoundLater : (defBody : SExpr ** defArgs : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) (MkSExprList sexprs)) -> Void) -> (defBody : SExpr ** defArgs : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) (MkSExprList (sexprHead :: sexprs))) -> Void
+alsoNotFoundLater : (notFoundHere : InvokationOfDefinition (MkInvocation fnName (MkFormList args)) sexprHead -> Void) -> (notFoundLater : (defBody : SExpr ** defArgs : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) (MkSExprList sexprs)) -> Void) -> (defBody : SExpr ** defArgs : List String ** ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) (MkSExprList (sexprHead :: sexprs))) -> Void
 alsoNotFoundLater notFoundHere notFoundLater (n ** axs ** pf)  with (pf)
     | (DefinitionHere invocFname _ _ invocArgs) = notFoundHere (IsInvokationOfDefinition invocFname invocArgs axs n)
-    | (DefinitionLater fnName axs n args previous) = notFoundLater (n ** axs ** previous)
+    | (DefinitionLater fnName axs n args notHere previous) = notFoundLater (n ** axs ** previous)
 
 
 
@@ -157,20 +157,80 @@ Principal function to extract the body and the arguments of an invocation from a
 
 -}
 
+wrongSExpr : (notFoundHere : (fnName' = fnName) -> Void) ->  (MkDef fnName' defArgs defBody = MkDef fnName da db) -> Void
+wrongSExpr notFoundHere Refl = absurd (notFoundHere Refl)
+
+wrongInvocation : (notFoundHere : InvokationOfDefinition (MkInvocation fnName (MkFormList args)) sexprHead -> Void)  -> (sexprHead = MkDef fnName da db) -> Void
+wrongInvocation notFoundHere Refl {fnName} {args} {da} {db} = absurd (notFoundHere (IsInvokationOfDefinition fnName args da db))
+
 canExtractDefinitionForInvocation : (fnName : String) -> (args : List SExpr) ->
-                                    (invPrf : Invocation (MkInvocation fnName (MkListSExpr args))) ->
+                                    (invPrf : Invocation (MkInvocation fnName (MkFormList args))) ->
                                     (sexprs : SExprList) ->
                                     Dec (defBody : SExpr  ** defArgs : (List String) ** (ExtractDefinitionFromInvocation (IsInvokationOfDefinition fnName args defArgs defBody) sexprs))
 canExtractDefinitionForInvocation fnName args invPrf (MkSExprList []) = No (emptySExprListImpossible invPrf)
-canExtractDefinitionForInvocation fnName args IsInvocation (MkSExprList (sexprHead :: sexprs)) with (isInvokationOfDefinition (MkInvocation fnName (MkListSExpr args)) sexprHead)
+canExtractDefinitionForInvocation fnName args IsInvocation (MkSExprList (sexprHead :: sexprs)) with (isInvokationOfDefinition (MkInvocation fnName (MkFormList args)) sexprHead)
     | (Yes prf)  with (getDefPartOfInvokationOfDefinition prf)
         | (fnName' ** defArgs ** defBody ** sexprHeadEQMkDef) = rewrite sexprHeadEQMkDef in case (decEq fnName' fnName) of
             (Yes Refl) => Yes (defBody ** defArgs ** DefinitionHere fnName defArgs defBody args)
             (No notFoundHere) => case (canExtractDefinitionForInvocation fnName args IsInvocation (MkSExprList sexprs)) of
                 (Yes foundLater) => case (foundLater) of
-                    (db ** da ** extractedDef) => Yes (db ** da ** DefinitionLater fnName da db args extractedDef)
+                    (db ** da ** extractedDef) => Yes (db ** da ** DefinitionLater fnName da db args (wrongSExpr notFoundHere) extractedDef)
                 (No notFoundLater) => No (notHereNotLater notFoundLater notFoundHere)
     | (No notFoundHere) = case (canExtractDefinitionForInvocation fnName args IsInvocation (MkSExprList sexprs)) of
         (Yes foundLater) => case (foundLater) of
-            (db ** da ** extractedDef) => Yes (db ** da ** DefinitionLater fnName da db args extractedDef)
+            (db ** da ** extractedDef) => Yes (db ** da ** DefinitionLater fnName da db args (wrongInvocation notFoundHere) extractedDef)
         (No notFoundLater) => No (alsoNotFoundLater notFoundHere notFoundLater)
+
+
+{--
+
+Look up a var in an environment.
+
+-}
+
+data VarInBindings : (varName : String) -> (bindingVarNo : Nat) -> (exprBindings : List (String, Nat)) -> Type where
+    VarIsHere : (varName             : String) ->
+                (bindingCurVarNo     : Nat) ->
+                (remainingBindings   : List (String, Nat)) ->
+                (VarInBindings varName bindingCurVarNo ((varName, bindingCurVarNo) :: remainingBindings))
+    VarIsLater : (varName            : String) ->
+                 (bindingHeadVarName : String) ->
+                 (bindingHeadVarNo   : Nat) ->
+                 (remainingBindings  : List (String, Nat)) ->
+                 (unequal            : Not (bindingHeadVarName=varName)) ->
+                 (varInRemainingPrf  : VarInBindings varName varNo remainingBindings) ->
+                 (VarInBindings
+                    varName
+                    varNo
+                    ((bindingHeadVarName, bindingHeadVarNo) :: remainingBindings))
+
+emptyBindingsList : (varName : String) -> (bindingVarNo : Nat ** VarInBindings varName bindingVarNo []) -> Void
+emptyBindingsList varName (x ** pf) with (pf)
+    | (VarIsHere _ _ _) impossible
+    | (VarIsLater _ _ _ _ _ _) impossible
+
+notInRemaining : (headVarNo : Nat) -> (remainingBindings : List (String, Nat)) -> (restContra : (bindingVarNo : Nat ** VarInBindings varName bindingVarNo remainingBindings) -> Void) -> (headContra : (headVarName = varName) -> Void) -> (bindingVarNo : Nat ** VarInBindings varName bindingVarNo ((headVarName, headVarNo) :: remainingBindings)) -> Void
+notInRemaining headVarNo remainingBindings restContra headContra (headVarNo ** (VarIsHere headVarName headVarNo remainingBindings)) {headVarName} = headContra Refl
+notInRemaining headVarNo remainingBindings restContra headContra (bindingVarNo ** (VarIsLater varName _ headVarNo remainingBindings _ remainingPrf)) {varName} = restContra (bindingVarNo ** remainingPrf)
+
+isVarInBindings : (varName : String) -> (exprBindings : List (String, Nat)) -> Dec (bindingVarNo ** (VarInBindings varName bindingVarNo exprBindings))
+isVarInBindings varName [] = No (emptyBindingsList varName)
+isVarInBindings varName ((headVarName, headVarNo) :: remainingBindings) = case (decEq headVarName varName) of
+    (Yes prf) => rewrite prf in Yes (headVarNo ** (VarIsHere varName headVarNo remainingBindings))
+    (No headContra) => case (isVarInBindings varName remainingBindings) of
+        (Yes (varNo ** remainingPrf)) => Yes (varNo ** (VarIsLater varName headVarName headVarNo remainingBindings headContra remainingPrf))
+        (No restContra) => No (notInRemaining headVarNo remainingBindings restContra headContra)
+
+
+
+sameContradiction : {a,b:String} -> ( f : (a = b) -> Void) -> (g : (a = b) -> Void) -> (f=g)
+sameContradiction f g = believe_me (f=g)
+
+sameVarNameSameBinding : (a:VarInBindings varname binding exprBindings) ->
+                         (b:VarInBindings varname binding' exprBindings) -> (a=b, binding=binding')
+sameVarNameSameBinding (VarIsHere varname binding remainingBindings) (VarIsHere varname binding remainingBindings) = (Refl, Refl)
+sameVarNameSameBinding (VarIsHere varname binding remainingBindings) (VarIsLater varname varname binding remainingBindings f varInRemainingPrf) = absurd (f Refl)
+sameVarNameSameBinding (VarIsLater bindingHeadVarName bindingHeadVarName bindingHeadVarNo remainingBindings f varInRemainingPrf) (VarIsHere bindingHeadVarName bindingHeadVarNo remainingBindings) = absurd (f Refl)
+sameVarNameSameBinding (VarIsLater varname bindingHeadVarName bindingHeadVarNo remainingBindings f varInRemainingPrf) (VarIsLater varname bindingHeadVarName bindingHeadVarNo remainingBindings g varInRemainingPrf') =
+    case sameVarNameSameBinding varInRemainingPrf varInRemainingPrf' of
+        (Refl, Refl) => rewrite sameContradiction f g in (Refl, Refl)
